@@ -89,6 +89,29 @@ function lookOf(motion: Motion): ThemeSetArgs {
   }
 }
 
+/**
+ * Some versions of the app name the backdrop `id` (with `colorScheme` inside it) instead of `scene`
+ * (with `overrideColorScheme` beside it). Try one shape and, if the engine refuses it, the other.
+ */
+function altLookOf(motion: Motion): ThemeSetArgs {
+  return {
+    colors: COLORS,
+    backdrop: { id: SCENES[motion], glass: GLASS, colorScheme: 'dark' },
+  } as unknown as ThemeSetArgs
+}
+
+async function setLook($: EngineInterface, motion: Motion): Promise<ThemeResult> {
+  try {
+    return await $.theme.set(lookOf(motion))
+  } catch (first) {
+    try {
+      return await $.theme.set(altLookOf(motion))
+    } catch {
+      throw first
+    }
+  }
+}
+
 /** Each SVG is built the first time it is asked for and then kept: a session only pays for what it shows. */
 const built = new Map<Motion, string>()
 
@@ -108,7 +131,7 @@ let shownFor: string | undefined
 async function show($: EngineInterface): Promise<ThemeResult | undefined> {
   const prefs = await prefsOf($)
   if (!prefs.isOn) return undefined
-  const set = await $.theme.set(lookOf(prefs.motion))
+  const set = await setLook($, prefs.motion)
   shownFor = await $.session.id()
   return set
 }
@@ -197,7 +220,9 @@ export const register: Register = on => {
     // Only the desktop and mobile apps have room behind the chat.
     if (e.surface !== 'desktop' && e.surface !== 'mobile') return next(e)
     if (!e.props.plugin.includes(PLUGIN)) return next(e)
-    const source = sceneOf(e.props.scene)
+    // The scene's name arrives as `scene` or `id`, depending on the app's version.
+    const props = e.props as { scene?: string; id?: string }
+    const source = sceneOf(props.scene ?? props.id ?? '')
     if (source === undefined) return next(e)
     const { Svg } = $.ui.resolve(e)
     return <Svg source={source} alt="ASCII sharks swimming slowly across a black background" isInteractive />

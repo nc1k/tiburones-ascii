@@ -1,0 +1,13 @@
+{
+  "name": "tiburones-ascii",
+  "description": "Fondo animado de tiburones en ASCII para la app de escritorio de Claude Code.",
+  "owner": {
+    "name": "nc1k"
+  },
+  "plugins": [
+    {
+      "name": "tiburones-ascii",
+      "source": "./"
+    }
+  ]
+}

@@ -1,29 +1,29 @@
-// Tema «tiburones-ascii»: un fondo animado de tiburones en ASCII detrás del chat de la app de escritorio,
-// con colores oscuros para que el texto se lea encima. La escena está en scene.ts, basada en
-// stackedlol/ascii-sharks (MIT, © 2026 drewdi; ver LICENSE).
+// The "ascii-sharks-theme" theme: an animated backdrop of ASCII sharks behind the desktop app's chat,
+// with dark colors so the text stays readable on top. The scene lives in scene.ts, based on
+// stackedlol/ascii-sharks (MIT, © 2026 drewdi; see LICENSE).
 //
-//   /tiburones          dice cómo está y qué opciones hay
-//   /tiburones on|off   activa o quita el tema (se recuerda entre sesiones)
-//   /tiburones ahorro   movimiento a saltos de 1/8 s: gasta muy poca batería (por defecto)
-//   /tiburones fluido   movimiento continuo: más suave, gasta más
+//   /sharks            says how it is set and lists the options
+//   /sharks on|off     turns the theme on or off (remembered across sessions)
+//   /sharks saver      moves in 1/8 s steps: uses very little battery (default)
+//   /sharks smooth     continuous motion: smoother, uses more
 
 import type { EngineInterface, Register, ThemeBackdropGlass, ThemeResult, ThemeSetArgs } from 'claude-code'
 
 import { makeColors } from './make-colors.js'
 import { BACKGROUND, sharkScene, type Motion } from './scene'
 
-const PLUGIN = 'tiburones-ascii'
-const SCENES: Record<Motion, string> = { ahorro: 'tiburones-ascii', fluido: 'tiburones-ascii-fluido' }
+const PLUGIN = 'ascii-sharks-theme'
+const SCENES: Record<Motion, string> = { saver: 'ascii-sharks', smooth: 'ascii-sharks-smooth' }
 
 /**
- * Los paneles (barra lateral, caja del mensaje) quedan casi opacos sobre el fondo y sin desenfoque:
- * el desenfoque obliga a recalcular el panel cada vez que algo se mueve detrás, y aquí no hace falta.
+ * Panels (sidebar, message box) stay almost opaque over the backdrop and unblurred:
+ * a blur makes the panel recompute every time something moves behind it, and it is not needed here.
  */
 const GLASS: ThemeBackdropGlass = { blur: 0, tint: BACKGROUND, opacity: 0.8 }
 
-/** Grises casi negros y texto claro; los colores de estado conservan su significado. */
+/** Near-black grays and light text; status colors keep their meaning. */
 const { theme: COLORS, problems } = makeColors({
-  label: 'Tiburones ASCII',
+  label: 'ASCII Sharks',
   only: 'dark',
   roles: { accent: '#7fd4e6', danger: '#e5534b', success: '#57c26a', warning: '#d9a441', pro: '#a98be0' },
   dark: {
@@ -44,9 +44,9 @@ const { theme: COLORS, problems } = makeColors({
 type Prefs = { isOn: boolean; motion: Motion }
 
 async function prefsOf($: EngineInterface): Promise<Prefs> {
-  const isOn = await $.store.get('activo')
-  const motion = await $.store.get('movimiento')
-  return { isOn: isOn !== false, motion: motion === 'fluido' ? 'fluido' : 'ahorro' }
+  const isOn = await $.store.get('enabled')
+  const motion = await $.store.get('motion')
+  return { isOn: isOn !== false, motion: motion === 'smooth' ? 'smooth' : 'saver' }
 }
 
 function lookOf(motion: Motion): ThemeSetArgs {
@@ -57,7 +57,7 @@ function lookOf(motion: Motion): ThemeSetArgs {
   }
 }
 
-/** Cada SVG se construye la primera vez que se pide y se guarda: la sesión solo paga lo que muestra. */
+/** Each SVG is built the first time it is asked for and then kept: a session only pays for what it shows. */
 const built = new Map<Motion, string>()
 
 function sceneOf(name: string): string | undefined {
@@ -70,7 +70,7 @@ function sceneOf(name: string): string | undefined {
   return source
 }
 
-/** La sesión a la que se le puso el tema por última vez: tras un /clear cambia y se vuelve a poner. */
+/** The session the theme was last applied to: after a /clear it changes and the theme is applied again. */
 let shownFor: string | undefined
 
 async function show($: EngineInterface): Promise<ThemeResult | undefined> {
@@ -83,69 +83,69 @@ async function show($: EngineInterface): Promise<ThemeResult | undefined> {
 
 function drawnNote(set: ThemeResult | undefined): string {
   if (set === undefined || set.isDrawn) return ''
-  return ` (Ahora mismo no hay una ventana que dibuje fondos: ${set.reason}. Se verá en la app de escritorio.)`
+  return ` (No window can draw backdrops right now: ${set.reason}. It will show in the desktop app.)`
 }
 
 const HELP = [
-  '/tiburones on      activa el fondo de tiburones',
-  '/tiburones off     lo quita y vuelve al aspecto normal',
-  '/tiburones ahorro  movimiento a saltos suaves, 8 veces por segundo: casi no gasta batería',
-  '/tiburones fluido  movimiento continuo: más suave, gasta más',
+  '/sharks on      turns the shark backdrop on',
+  '/sharks off     removes it and goes back to the normal look',
+  '/sharks saver   moves in small steps, 8 times per second: barely uses battery',
+  '/sharks smooth  continuous motion: smoother, uses more battery',
 ].join('\n')
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
-      name: 'tiburones',
-      description: 'Fondo de tiburones ASCII: on, off, ahorro o fluido',
+      name: 'sharks',
+      description: 'ASCII shark backdrop: on, off, saver or smooth',
     })
-    // Mientras se ajustan los colores: la línea que haría que la app ignorase el tema entero.
+    // While the colors are being tuned: the line that would make the app ignore the whole theme.
     const unpainted = problems.find(line => line.startsWith("Desktop won't paint"))
     if (unpainted !== undefined) $.ui.toast(unpainted)
     await show($)
     return next(e)
   })
 
-  // Tras un /clear la conversación sigue con otro id y no llega session.start: se repone al primer turno.
+  // After a /clear the conversation goes on with a new id and no session.start arrives: reapply on the first turn.
   on('turn.start', async ($, e, next) => {
     if (e.agentId === undefined && shownFor !== (await $.session.id())) await show($)
     return next(e)
   })
 
-  on('command.run', { command: 'tiburones' }, async ($, e) => {
+  on('command.run', { command: 'sharks' }, async ($, e) => {
     const word = e.args.trim().toLowerCase()
     const prefs = await prefsOf($)
 
-    if (word === 'on' || word === 'activar') {
-      await $.store.set('activo', true)
+    if (word === 'on') {
+      await $.store.set('enabled', true)
       const set = await show($)
-      return { text: `Tiburones activados (movimiento: ${prefs.motion}).${drawnNote(set)}` }
+      return { text: `Sharks on (motion: ${prefs.motion}).${drawnNote(set)}` }
     }
-    if (word === 'off' || word === 'desactivar') {
-      await $.store.set('activo', false)
-      // Quitar el tema es lo que se ha pedido: solo aquí se borra.
+    if (word === 'off') {
+      await $.store.set('enabled', false)
+      // Removing the theme is what was asked for: only here is it cleared.
       await $.theme.clear()
       shownFor = undefined
-      return { text: 'Tiburones desactivados en todas las sesiones. Vuelven con /tiburones on.' }
+      return { text: 'Sharks off in every session. Bring them back with /sharks on.' }
     }
-    if (word === 'ahorro' || word === 'fluido') {
-      await $.store.set('movimiento', word)
-      if (!prefs.isOn) return { text: `Movimiento: ${word}. El fondo está apagado; actívalo con /tiburones on.` }
+    if (word === 'saver' || word === 'smooth') {
+      await $.store.set('motion', word)
+      if (!prefs.isOn) return { text: `Motion: ${word}. The backdrop is off; turn it on with /sharks on.` }
       const set = await show($)
-      return { text: `Movimiento: ${word}.${drawnNote(set)}` }
+      return { text: `Motion: ${word}.${drawnNote(set)}` }
     }
-    const state = prefs.isOn ? `activado, movimiento ${prefs.motion}` : 'desactivado'
-    const intro = word === '' ? `Fondo de tiburones: ${state}.` : `No conozco «${word}». Fondo de tiburones: ${state}.`
+    const state = prefs.isOn ? `on, motion ${prefs.motion}` : 'off'
+    const intro = word === '' ? `Shark backdrop: ${state}.` : `Unknown option "${word}". Shark backdrop: ${state}.`
     return { text: `${intro}\n${HELP}` }
   })
 
   on('ui.render', { component: 'Backdrop' }, ($, e, next) => {
-    // Solo la app de escritorio y la móvil tienen sitio detrás del chat.
+    // Only the desktop and mobile apps have room behind the chat.
     if (e.surface !== 'desktop' && e.surface !== 'mobile') return next(e)
     if (!e.props.plugin.includes(PLUGIN)) return next(e)
     const source = sceneOf(e.props.scene)
     if (source === undefined) return next(e)
     const { Svg } = $.ui.resolve(e)
-    return <Svg source={source} alt="Tiburones en ASCII nadando despacio sobre un fondo negro" isInteractive />
+    return <Svg source={source} alt="ASCII sharks swimming slowly across a black background" isInteractive />
   })
 }

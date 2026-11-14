@@ -1,5 +1,5 @@
-Este mod contiene código portado de ascii-sharks (https://github.com/stackedlol/ascii-sharks),
-en hooks/scene.ts. Ese código, y este mod en su conjunto, se distribuyen bajo la licencia MIT original:
+This mod contains code ported from ascii-sharks (https://github.com/stackedlol/ascii-sharks),
+in hooks/scene.ts. That code, and this mod as a whole, are distributed under the original MIT license:
 
 MIT License
 

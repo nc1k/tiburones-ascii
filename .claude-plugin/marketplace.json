@@ -1,12 +1,12 @@
 {
-  "name": "tiburones-ascii",
-  "description": "Fondo animado de tiburones en ASCII para la app de escritorio de Claude Code.",
+  "name": "ascii-sharks-theme",
+  "description": "Animated ASCII shark backdrop for the Claude Code desktop app.",
   "owner": {
-    "name": "nc1k"
+    "name": "Ryukamy"
   },
   "plugins": [
     {
-      "name": "tiburones-ascii",
+      "name": "ascii-sharks-theme",
       "source": "./"
     }
   ]

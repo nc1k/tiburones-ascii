@@ -1,43 +1,43 @@
-# tiburones-ascii
+# ascii-sharks-theme
 
-Un tema para Claude Code en la app de escritorio: detrás del chat nadan cuatro tiburones dibujados con caracteres ASCII (martillo, clásico, marrajo y zorro), en gris claro sobre un fondo casi negro, como en una terminal. Cruzan la pantalla de un lado a otro moviendo la cola. Los colores de la app pasan a grises oscuros con texto claro, y un velo oscurece a los tiburones cuando pasan por detrás de la columna del chat.
+A theme for the Claude Code desktop app: four sharks drawn in ASCII characters (a hammerhead, a classic shark, a mako and a thresher) swim behind the chat, light gray on a near-black background, like a terminal. They cross the screen from side to side, tails swaying. The app's colors switch to dark grays with light text, and a veil dims the sharks while they pass behind the chat column so the text stays readable.
 
-Basado en [ascii-sharks](https://github.com/stackedlol/ascii-sharks) de drewdi (licencia MIT; el aviso está en `LICENSE`).
+Based on [ascii-sharks](https://github.com/stackedlol/ascii-sharks) by drewdi (MIT license; the notice is in `LICENSE`).
 
-## Instalación
+## Install
 
-En una sesión de Claude Code en la terminal, escribe:
+In the desktop app: click **+** next to the message box, then **Plugins**, **Add marketplace** with `Ryukamy/ascii-sharks-theme`, then **Add plugin**.
+
+In a Claude Code terminal session:
 
 ```
-/plugin install tiburones-ascii --marketplace nc1k/tiburones-ascii
+/plugin install ascii-sharks-theme --marketplace Ryukamy/ascii-sharks-theme
 ```
 
-Responde `y` para añadir el marketplace y pulsa Enter para instalarlo para tu usuario. O, desde una shell:
+Answer `y` to add the marketplace and press Enter to install it for your user. Or, from a shell:
 
 ```bash
-claude plugin install tiburones-ascii --marketplace nc1k/tiburones-ascii
+claude plugin install ascii-sharks-theme --marketplace Ryukamy/ascii-sharks-theme
 ```
 
-En la app de escritorio, donde `/plugin` no funciona: pulsa **+** junto a la caja del mensaje, luego **Plugins**, **Add marketplace** con `nc1k/tiburones-ascii` y después **Add plugin**.
+Open a new session in the desktop app and the sharks appear behind the chat.
 
-Abre una sesión nueva en la app de escritorio y los tiburones aparecen detrás del chat.
+## Usage
 
-## Uso
+- `/sharks`: says whether it is on and lists the options.
+- `/sharks on` and `/sharks off`: turn the backdrop on or off. Remembered for later sessions.
+- `/sharks saver` (default): the sharks move in small steps, all at once, 8 times per second. The backdrop repaints at most 8 times per second instead of 60 or 120.
+- `/sharks smooth`: continuous gliding. Smoother, uses more battery.
 
-- `/tiburones`: dice si está activado y qué opciones hay.
-- `/tiburones on` y `/tiburones off`: activa o quita el fondo. Se recuerda para las sesiones siguientes.
-- `/tiburones ahorro` (por defecto): los tiburones avanzan a saltos pequeños, todos a la vez, 8 veces por segundo. El fondo se repinta como mucho 8 veces por segundo en vez de 60 o 120.
-- `/tiburones fluido`: deslizamiento continuo. Más suave, gasta más batería.
+If the system's "reduce motion" setting is on, the scene holds still.
 
-Si el sistema tiene activado «reducir movimiento», la escena se queda quieta.
+## What's inside
 
-## Qué hay dentro
+- `hooks/scene.ts`: the scene. It rasterizes each shark in six tail poses and builds an SVG whose CSS moves them and cycles the poses. The SVG runs no scripts.
+- `hooks/register.tsx`: applies the theme when a session starts, reapplies it after `/clear`, registers `/sharks` and draws the backdrop.
+- `hooks/make-colors.js`: the palette generator that ships with Claude Code, unchanged.
+- `tests/sharks.test.ts`: tests for `claude plugin test`.
 
-- `hooks/scene.ts`: la escena. Rasteriza cada tiburón en seis posturas de la cola y monta un SVG cuyo CSS los desplaza y alterna las posturas. Ese SVG no ejecuta ningún script.
-- `hooks/register.tsx`: pone el tema al empezar la sesión, lo repone tras `/clear`, registra `/tiburones` y dibuja el fondo.
-- `hooks/make-colors.js`: el generador de paletas que trae Claude Code, sin cambios.
-- `tests/tiburones.test.ts`: pruebas para `claude plugin test`.
+## Limits
 
-## Límites
-
-Solo la app de escritorio (y la móvil) dibujan fondos. La terminal y los editores no muestran nada. El tema está pensado para el modo oscuro: si la app está en modo claro y el texto sale oscuro, cámbialo en Ajustes → General → Apariencia.
+Only the desktop app (and the mobile app) draw backdrops. The terminal and editors show nothing. The theme is made for dark mode: if the app is in light mode and the text looks dark, switch it in Settings → General → Appearance.

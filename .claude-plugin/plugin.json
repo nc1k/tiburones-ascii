@@ -1,10 +1,10 @@
 {
-  "name": "tiburones-ascii",
+  "name": "ascii-sharks-theme",
   "version": "0.4.0",
-  "description": "Fondo animado para la app de escritorio: tiburones en ASCII, gris claro sobre negro. Basado en stackedlol/ascii-sharks (MIT, © 2026 drewdi). /tiburones on|off|ahorro|fluido.",
+  "description": "Animated backdrop for the desktop app: ASCII sharks, light gray on black. Based on stackedlol/ascii-sharks (MIT, © 2026 drewdi). /sharks on|off|saver|smooth.",
   "license": "MIT",
   "author": {
-    "name": "nc1k"
+    "name": "Ryukamy"
   },
-  "homepage": "https://github.com/nc1k/tiburones-ascii"
+  "homepage": "https://github.com/Ryukamy/ascii-sharks-theme"
 }

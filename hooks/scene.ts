@@ -1,34 +1,33 @@
-// Escena de fondo: tiburones en ASCII sobre negro, estilo terminal.
+// Backdrop scene: ASCII sharks on black, terminal style.
 //
-// Basada en stackedlol/ascii-sharks (https://github.com/stackedlol/ascii-sharks),
-// Copyright (c) 2026 drewdi, licencia MIT; el aviso completo está en LICENSE.
-// De allí vienen, portadas casi tal cual desde src/renderer.ts y src/math.ts: las siluetas vistas
-// desde arriba de cada especie (anchura del cuerpo, aletas, cabeza de martillo), la onda que
-// recorre el cuerpo al nadar, el muestreo de cada celda con sub-muestras para que los bordes
-// salgan suaves, el hash de las texturas y los juegos de glifos.
+// Based on stackedlol/ascii-sharks (https://github.com/stackedlol/ascii-sharks),
+// Copyright (c) 2026 drewdi, MIT license; the full notice is in LICENSE.
+// Ported almost as-is from its src/renderer.ts and src/math.ts: the top-down silhouette of each
+// species (body width, fins, hammerhead), the wave that runs down the body as it swims, the
+// per-cell sampling with sub-samples so edges come out smooth, the texture hash and the glyph sets.
 //
-// Lo que cambia: el fondo de la app es un SVG sin scripts, así que aquí no hay canvas ni bucle.
-// Cada tiburón se rasteriza unas pocas veces al cargar el mod (una por postura de la cola) y el CSS
-// de dentro del SVG lo desplaza y alterna las posturas. En vez de bloques grises con glifos oscuros,
-// los glifos van en gris claro sobre negro: más denso donde la piel recibe más luz.
+// What changes: the app's backdrop is an SVG with no scripts, so there is no canvas and no loop here.
+// Each shark is rasterized a few times when the mod loads (once per tail pose) and the CSS inside
+// the SVG moves it and cycles the poses. Instead of gray blocks with dark glyphs, the glyphs are
+// light gray on black: denser where the skin catches more light.
 //
-// Batería: en modo «ahorro» todo cambia a la vez en pasos de 1/8 de segundo, así que el fondo se
-// repinta como mucho 8 veces por segundo en lugar de 60 o 120. No hay filtros ni desenfoques.
-// Con «reducir movimiento» activado en el sistema, la escena se queda quieta en una composición fija.
-// Todo es construir texto: sin DOM, sin nada de fuera y la misma salida en cada llamada.
+// Battery: in "saver" mode everything changes at once in steps of 1/8 second, so the backdrop
+// repaints at most 8 times per second instead of 60 or 120. No filters, no blurs.
+// With the system's "reduce motion" setting on, the scene holds still in a fixed composition.
+// It is all string building: no DOM, nothing external, and the same output on every call.
 
-export type Motion = 'ahorro' | 'fluido'
+export type Motion = 'saver' | 'smooth'
 
 const VIEW_W = 1600
 const VIEW_H = 1000
-/** Una celda de la rejilla, en unidades del viewBox (el original usa celdas de unos 12×18 px). */
+/** One grid cell, in viewBox units (the original uses cells of about 12×18 px). */
 const CW = 10
 const CH = 15
-/** El reloj común: todo paso y todo cambio de postura cae en múltiplos de este tiempo. */
+/** The shared clock: every step and every pose change lands on a multiple of this time. */
 const TICK = 0.125
 const NODES = 20
 const POSES = 6
-/** Amplitud de la onda al nadar a velocidad de crucero (en el original, `speed / 60` acotado). */
+/** Wave amplitude at cruising speed (in the original, `speed / 60` clamped). */
 const SWIM = 0.85
 
 export const BACKGROUND = '#0a0b0d'
@@ -39,7 +38,7 @@ const FIN = 3
 const RIDGE = 4
 const EYE = 5
 
-// Glifos del original: escasos donde hay poca tinta, densos donde hay mucha.
+// Glyphs from the original: sparse where there is little ink, dense where there is a lot.
 const SKIN_RAMP = ':;t%SX8#@'
 const FIN_GLYPHS = '%;tS:'
 const RIDGE_GLYPHS = '@8%'
@@ -47,7 +46,7 @@ const EDGE_HEAVY = ':;'
 const EDGE_LIGHT = ".',`"
 const WAKE_GLYPHS = ".`',"
 
-/** Sub-muestras dentro de cada celda, para bordes con antialias. */
+/** Sub-samples inside each cell, for antialiased edges. */
 const SUBSAMPLES: ReadonlyArray<readonly [number, number]> = [
   [0.25, 0.3],
   [0.75, 0.3],
@@ -55,10 +54,10 @@ const SUBSAMPLES: ReadonlyArray<readonly [number, number]> = [
   [0.75, 0.72],
 ]
 
-/** Brillos posibles de un glifo: cuatro grises por animal, para que el SVG pese poco. */
+/** The brightness levels a glyph can take: four grays per animal, to keep the SVG small. */
 const LEVELS = [0.34, 0.52, 0.7, 0.88] as const
 
-// ── utilidades (de src/math.ts) ──────────────────────────────────────────
+// ── helpers (from src/math.ts) ──────────────────────────────────────────
 
 const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v)
 
@@ -67,7 +66,7 @@ function smoothstep(e0: number, e1: number, x: number): number {
   return t * t * (3 - 2 * t)
 }
 
-/** Hash entero barato → [0, 1). Determinista, así las texturas no cambian entre cargas. */
+/** Cheap integer hash → [0, 1). Deterministic, so textures do not change between loads. */
 function hash3(x: number, y: number, z: number): number {
   let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(z | 0, 1442695041)
   h = Math.imul(h ^ (h >>> 13), 1274126177)
@@ -79,7 +78,7 @@ function charOf(set: string, index: number): string {
   return set[index % set.length] ?? set[0] ?? '.'
 }
 
-// ── siluetas (de src/renderer.ts) ────────────────────────────────────────
+// ── silhouettes (from src/renderer.ts) ──────────────────────────────────
 
 type Shape = {
   halfWidth: (s: number) => number
@@ -94,7 +93,7 @@ type Shape = {
   gills: readonly [number, number]
 }
 
-/** Media anchura clásica vista desde arriba en s ∈ [0, 1] (hocico → cola), como fracción de la longitud. */
+/** Classic top-down half width at s ∈ [0, 1] (snout → tail), as a fraction of the length. */
 function classicHalfWidth(s: number): number {
   if (s < 0.13) return 0.09 * Math.pow(Math.sin(((s / 0.13) * Math.PI) / 2), 0.95)
   if (s < 0.3) return 0.09 + 0.016 * smoothstep(0.13, 0.3, s)
@@ -115,7 +114,7 @@ const SHAPES = {
     eye: [0.1, 0.14],
     gills: [0.19, 0.29],
   },
-  // Cuello fino bajo un cefalofolio ancho y echado hacia atrás, primera dorsal alta.
+  // A thin neck under a wide, swept-back cephalofoil, and a tall first dorsal fin.
   hammerhead: {
     halfWidth: (s: number) => {
       if (s < 0.06) return 0.045
@@ -132,7 +131,7 @@ const SHAPES = {
     eye: null,
     gills: [0.16, 0.26],
   },
-  // Marrajo: hocico cónico y largo, cuerpo de torpedo y cola alta en media luna.
+  // Mako: long conical snout, torpedo body and a tall crescent tail.
   mako: {
     halfWidth: (s: number) => {
       if (s < 0.17) return 0.088 * Math.pow(Math.sin(((s / 0.17) * Math.PI) / 2), 1.5)
@@ -150,7 +149,7 @@ const SHAPES = {
     eye: [0.11, 0.15],
     gills: [0.2, 0.3],
   },
-  // Tiburón zorro: cuerpo compacto delante y el lóbulo superior de la cola como un látigo larguísimo.
+  // Thresher: a compact body up front and the upper tail lobe as a very long whip.
   thresher: {
     halfWidth: (s: number) => {
       if (s < 0.08) return 0.07 * Math.pow(Math.sin(((s / 0.08) * Math.PI) / 2), 0.75)
@@ -181,18 +180,18 @@ function inTriangle(px: number, py: number, ax: number, ay: number, bx: number, 
   return !(neg && pos)
 }
 
-// ── rasterizado de un tiburón en una postura ─────────────────────────────
+// ── rasterizing one shark in one pose ───────────────────────────────────
 
 type Point = { x: number; y: number }
-/** Una celda pintada: columna, fila, glifo y brillo (0–1). */
+/** A painted cell: column, row, glyph and brightness (0–1). */
 type Cell = { c: number; r: number; glyph: string; level: number }
 type Raster = { cells: Cell[]; cols: number; rows: number; tail: Point }
 type Seg = { ax: number; ay: number; sx: number; sy: number; len2: number; len: number; arc: number }
 type Hit = { on: boolean; flag: number; shade: number; s: number; v: number; dist: number }
 
 /**
- * Rasteriza un tiburón recto, mirando a la derecha (`dir` 1) o a la izquierda (-1), con la onda del
- * cuerpo en la fase `phase`. Devuelve las celdas en la rejilla de su propia caja.
+ * Rasterizes a straight shark facing right (`dir` 1) or left (-1), with the body wave at
+ * `phase`. Returns the cells on the grid of its own box.
  */
 function rasterShark(shape: Shape, L: number, phase: number, dir: 1 | -1, id: number): Raster {
   const padCols = Math.ceil((L * 0.06) / CW)
@@ -202,7 +201,7 @@ function rasterShark(shape: Shape, L: number, phase: number, dir: 1 | -1, id: nu
   const padX = padCols * CW
   const midY = (halfRows + 0.5) * CH
 
-  // La columna vertebral: recta, más la onda que crece hacia la cola.
+  // The spine: straight, plus the wave that grows toward the tail.
   const spine: Point[] = []
   for (let k = 0; k < NODES; k += 1) {
     const s = k / (NODES - 1)
@@ -230,7 +229,7 @@ function rasterShark(shape: Shape, L: number, phase: number, dir: 1 | -1, id: nu
   const tip = L * shape.pectoral[3] * flex
   const hit: Hit = { on: false, flag: 0, shade: 0, s: 0, v: 0, dist: 0 }
 
-  /** Clasifica un punto respecto al tiburón: s a lo largo del cuerpo (0 hocico → 1 cola), v a través. */
+  /** Classifies a point against the shark: s along the body (0 snout → 1 tail), v across it. */
   const sample = (px: number, py: number): Hit => {
     let best = Infinity
     let bestS = 0
@@ -261,7 +260,7 @@ function rasterShark(shape: Shape, L: number, phase: number, dir: 1 | -1, id: nu
 
     const head = shape.head
     if (head !== undefined && u < L * (head.sweep + head.depth + head.notch)) {
-      // Cefalofolio: un ala ancha a través del hocico, con las puntas echadas hacia atrás.
+      // Cephalofoil: a wide wing across the snout, its tips swept back.
       const span = L * head.span
       const r = a / span
       const front = L * head.sweep * r * r + L * head.notch * Math.max(0, 1 - r / 0.14)
@@ -276,7 +275,7 @@ function rasterShark(shape: Shape, L: number, phase: number, dir: 1 | -1, id: nu
 
     if (a <= w) {
       const across = a / (w || 1)
-      // Lomo redondeado iluminado desde arriba a la izquierda; los flancos caen en sombra.
+      // A rounded back lit from the upper left; the flanks fall into shadow.
       const facing = (bestNx * -0.6 + bestNy * -0.8) * across
       let shade = 0.58 - across * across * 0.42 + facing * 0.26
       let flag = BODY
@@ -289,7 +288,7 @@ function rasterShark(shape: Shape, L: number, phase: number, dir: 1 | -1, id: nu
         flag = EYE
         shade = 0
       } else if (s > shape.gills[0] && s < shape.gills[1] && across > 0.58) {
-        // Cinco hendiduras branquiales.
+        // Five gill slits.
         if (Math.floor(((s - shape.gills[0]) / (shape.gills[1] - shape.gills[0])) * 5) % 2 === 0) shade *= 0.45
       } else if (s < 0.05) {
         shade = Math.max(shade, 0.7)
@@ -303,7 +302,7 @@ function rasterShark(shape: Shape, L: number, phase: number, dir: 1 | -1, id: nu
     const [p0, p1, p2] = shape.pectoral
     if (
       inTriangle(u, a, L * p0, 0, L * p1, 0, L * p2, tip) &&
-      // Las aletas falcadas (en hoz) tienen el borde de salida cóncavo.
+      // Falcate (sickle-shaped) fins have a concave trailing edge.
       !(shape.falcate && inTriangle(u, a, L * p1, 0, L * (p1 + (p2 - p1) * 0.33), tip * 0.55, L * p2, tip))
     ) {
       hit.on = true
@@ -340,7 +339,7 @@ function rasterShark(shape: Shape, L: number, phase: number, dir: 1 | -1, id: nu
       }
       if (hits === 0) continue
       const coverage = hits / 5
-      // Clave anclada al cuerpo: cada glifo viaja con su trozo de piel de una postura a otra.
+      // A key anchored to the body: each glyph travels with its patch of skin from pose to pose.
       const key = (hash3(Math.round(s * 52), Math.round(v / (CW * 0.9)), id) * 4294967295) >>> 0
       const look = centerHit && coverage >= 0.6 ? lookOf(flag, shade, key) : lookOf(EDGE, coverage, key)
       cells.push({ c, r, glyph: look[0], level: look[1] })
@@ -350,7 +349,7 @@ function rasterShark(shape: Shape, L: number, phase: number, dir: 1 | -1, id: nu
   return { cells, cols, rows, tail }
 }
 
-/** Glifo y brillo de una celda: más tinta y más claro donde el lomo recibe luz. */
+/** A cell's glyph and brightness: more ink and lighter where the back catches the light. */
 function lookOf(flag: number, shade: number, key: number): [string, number] {
   const pick = key >>> 8
   if (flag === EDGE) return [charOf(shade >= 0.5 ? EDGE_HEAVY : EDGE_LIGHT, pick), 0.3 + shade * 0.25]
@@ -362,7 +361,7 @@ function lookOf(flag: number, shade: number, key: number): [string, number] {
   return [charOf(SKIN_RAMP, index), 0.34 + shade * 0.62]
 }
 
-/** La estela: unos puntos tenues detrás de la cola, distintos en cada postura para que titilen. */
+/** The wake: a few faint dots behind the tail, different in each pose so they twinkle. */
 function wakeCells(tail: Point, dir: 1 | -1, seed: number): Cell[] {
   const out: Cell[] = []
   const taken = new Set<string>()
@@ -382,9 +381,9 @@ function wakeCells(tail: Point, dir: 1 | -1, seed: number): Cell[] {
   return out
 }
 
-// ── de celdas a SVG ──────────────────────────────────────────────────────
+// ── from cells to SVG ───────────────────────────────────────────────────
 
-/** Gris frío de un brillo y una profundidad: cuanto más hondo nada el animal, más apagado. */
+/** A cool gray for a brightness and a depth: the deeper the animal swims, the dimmer it is. */
 function grayOf(level: number, depth: number): string {
   const g = Math.round(240 * level * depth)
   const r = Math.round(g * 0.96)
@@ -405,7 +404,7 @@ function bucketOf(level: number): number {
   return best
 }
 
-/** Un grupo por gris y, dentro, un `<text>` por fila con una x por glifo: la rejilla no depende de la fuente. */
+/** One group per gray and, inside it, one `<text>` per row with an x per glyph: the grid does not depend on the font. */
 function cellsSvg(cells: Cell[], depth: number): string {
   const buckets = new Map<number, Map<number, Cell[]>>()
   for (const cell of cells) {
@@ -429,7 +428,7 @@ function cellsSvg(cells: Cell[], depth: number): string {
   return out
 }
 
-/** Posturas que se turnan: cada una se ve `ticksPerPose` ticks; la primera es la que queda en reposo. */
+/** Poses that take turns: each one shows for `ticksPerPose` ticks; the first is the one left at rest. */
 function posesSvg(poses: string[], ticksPerPose: number): string {
   const count = poses.length
   const period = count * ticksPerPose * TICK
@@ -442,22 +441,22 @@ function posesSvg(poses: string[], ticksPerPose: number): string {
     .join('')
 }
 
-// ── quién nada, por dónde y a qué ritmo ──────────────────────────────────
+// ── who swims, where and how fast ───────────────────────────────────────
 
 type Mover = {
-  /** Su clase y el nombre de su animación. */
+  /** Its class and the name of its animation. */
   name: string
   body: string
-  /** Desde dónde y hasta dónde va su caja (esquina superior izquierda), en unidades del viewBox. */
+  /** Where its box (top-left corner) starts and ends, in viewBox units. */
   from: Point
   to: Point
-  /** Cuánto avanza en horizontal por tick. */
+  /** How far it moves horizontally per tick. */
   step: number
-  /** Cuántos ticks espera fuera de la pantalla antes de volver a pasar. */
+  /** How many ticks it waits off screen before passing again. */
   pauseTicks: number
-  /** Por dónde va de su ciclo en el instante cero: así la escena arranca ya poblada. */
+  /** How far through its cycle it is at time zero, so the scene starts already populated. */
   start: number
-  /** Dónde se queda cuando no hay animación (reducir movimiento). */
+  /** Where it stays when there is no animation (reduce motion). */
   rest: Point
 }
 
@@ -467,8 +466,8 @@ function moverCss(m: Mover, motion: Motion): string {
   const pct = ((steps / cycle) * 100).toFixed(4)
   const duration = cycle * TICK
   const delay = Math.round(m.start * cycle) * TICK
-  // Ahorro: un salto por tick, todos a la vez. Fluido: deslizamiento continuo, a la tasa de la pantalla.
-  const timing = motion === 'ahorro' ? `steps(${steps},end)` : 'linear'
+  // Saver: one jump per tick, all at once. Smooth: continuous gliding, at the display's rate.
+  const timing = motion === 'saver' ? `steps(${steps},end)` : 'linear'
   return (
     `.${m.name}{transform:translate(${m.rest.x}px,${m.rest.y}px);animation:${m.name} ${duration}s ${timing} -${delay}s infinite}` +
     `@keyframes ${m.name}{0%{transform:translate(${m.from.x}px,${m.from.y}px)}${pct}%,100%{transform:translate(${m.to.x}px,${m.to.y}px)}}`
@@ -480,7 +479,7 @@ type SharkSpec = {
   kind: Kind
   length: number
   dir: 1 | -1
-  /** Centro de su carril al entrar y al salir. */
+  /** The center of its lane on the way in and on the way out. */
   laneFrom: number
   laneTo: number
   step: number
@@ -488,17 +487,17 @@ type SharkSpec = {
   start: number
   depth: number
   ticksPerPose: number
-  /** Dónde descansa su caja con reducir movimiento; fuera de la pantalla si no se ve. */
+  /** Where its box rests with reduce motion; off screen if it is not shown. */
   restX: number
   seed: number
 }
 
-/** Cuatro tiburones a distintas profundidades: los más hondos, más apagados y por debajo. */
+/** Four sharks at different depths: the deeper ones are dimmer and drawn underneath. */
 const SHARKS: readonly SharkSpec[] = [
-  { name: 'zorro', kind: 'thresher', length: 440, dir: -1, laneFrom: 400, laneTo: 350, step: 3, pause: 50, start: 0.06, depth: 0.55, ticksPerPose: 2, restX: -3000, seed: 41 },
-  { name: 'marrajo', kind: 'mako', length: 360, dir: 1, laneFrom: 560, laneTo: 470, step: 5, pause: 36, start: 0.92, depth: 0.7, ticksPerPose: 1, restX: -3000, seed: 23 },
-  { name: 'clasico', kind: 'classic', length: 430, dir: -1, laneFrom: 770, laneTo: 815, step: 3.5, pause: 14, start: 0.52, depth: 0.92, ticksPerPose: 2, restX: 1010, seed: 7 },
-  { name: 'martillo', kind: 'hammerhead', length: 500, dir: 1, laneFrom: 250, laneTo: 205, step: 3, pause: 8, start: 0.24, depth: 1, ticksPerPose: 2, restX: 70, seed: 3 },
+  { name: 'thresher', kind: 'thresher', length: 440, dir: -1, laneFrom: 400, laneTo: 350, step: 3, pause: 50, start: 0.06, depth: 0.55, ticksPerPose: 2, restX: -3000, seed: 41 },
+  { name: 'mako', kind: 'mako', length: 360, dir: 1, laneFrom: 560, laneTo: 470, step: 5, pause: 36, start: 0.92, depth: 0.7, ticksPerPose: 1, restX: -3000, seed: 23 },
+  { name: 'classic', kind: 'classic', length: 430, dir: -1, laneFrom: 770, laneTo: 815, step: 3.5, pause: 14, start: 0.52, depth: 0.92, ticksPerPose: 2, restX: 1010, seed: 7 },
+  { name: 'hammerhead', kind: 'hammerhead', length: 500, dir: 1, laneFrom: 250, laneTo: 205, step: 3, pause: 8, start: 0.24, depth: 1, ticksPerPose: 2, restX: 70, seed: 3 },
 ]
 
 function sharkMover(spec: SharkSpec): Mover {
@@ -529,25 +528,25 @@ function sharkMover(spec: SharkSpec): Mover {
   }
 }
 
-// ── la escena completa ───────────────────────────────────────────────────
+// ── the whole scene ─────────────────────────────────────────────────────
 
 /**
- * El SVG del fondo. `ahorro` mueve todo a saltos de 1/8 s (se repinta como mucho 8 veces por segundo);
- * `fluido` desliza los animales de forma continua, a costa de repintar a la tasa de la pantalla.
+ * The backdrop SVG. `saver` moves everything in 1/8 s jumps (it repaints at most 8 times per second);
+ * `smooth` glides the animals continuously, at the cost of repainting at the display's rate.
  */
 export function sharkScene(motion: Motion): string {
-  // De más hondo a más cerca: lo que va después se pinta encima.
+  // From deepest to closest: whatever comes later is painted on top.
   const order = SHARKS.map(sharkMover)
   const style =
     `text{font:600 11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-anchor:middle}` +
     `.b6{animation:b6 1s step-end infinite}@keyframes b6{0%{opacity:1}16.6667%,100%{opacity:0}}` +
     order.map(m => moverCss(m, motion)).join('') +
     `@media (prefers-reduced-motion:reduce){.m,.b6{animation:none!important}}`
-  // Una rejilla de celdas casi invisible, como la del original, y un velo en la columna del chat.
+  // A nearly invisible cell grid, like the original's, and a veil over the chat column.
   const defs =
-    `<pattern id="rejilla" width="${CW}" height="${CH}" patternUnits="userSpaceOnUse">` +
+    `<pattern id="grid" width="${CW}" height="${CH}" patternUnits="userSpaceOnUse">` +
     `<path d="M0 .5H${CW}M.5 0V${CH}" stroke="#ffffff" stroke-opacity=".03" fill="none"/></pattern>` +
-    `<linearGradient id="velo" x1="0" x2="1" y1="0" y2="0">` +
+    `<linearGradient id="veil" x1="0" x2="1" y1="0" y2="0">` +
     `<stop offset="0" stop-color="${BACKGROUND}" stop-opacity="0"/>` +
     `<stop offset=".24" stop-color="${BACKGROUND}" stop-opacity="0"/>` +
     `<stop offset=".38" stop-color="${BACKGROUND}" stop-opacity=".6"/>` +
@@ -559,9 +558,9 @@ export function sharkScene(motion: Motion): string {
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VIEW_W} ${VIEW_H}" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">` +
     `<style>${style}</style><defs>${defs}</defs>` +
     `<rect x="-20" y="-20" width="${VIEW_W + 40}" height="${VIEW_H + 40}" fill="${BACKGROUND}"/>` +
-    `<rect width="${VIEW_W}" height="${VIEW_H}" fill="url(#rejilla)"/>` +
+    `<rect width="${VIEW_W}" height="${VIEW_H}" fill="url(#grid)"/>` +
     animals +
-    `<rect width="${VIEW_W}" height="${VIEW_H}" fill="url(#velo)"/>` +
+    `<rect width="${VIEW_W}" height="${VIEW_H}" fill="url(#veil)"/>` +
     `</svg>`
   )
 }

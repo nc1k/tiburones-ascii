@@ -78,3 +78,29 @@ test('/sharks smooth switches to the continuous scene', async ($, on) => {
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   expect(JSON.stringify(record.sets.at(-1))).toContain('"scene":"ascii-sharks-smooth"')
 })
+
+test('/sharks still answers when the app names it after the plugin or the store fails', async ($, on) => {
+  const record = { sets: [] as unknown[], clears: 0 }
+  on('store.get', () => {
+    throw new Error('store unavailable')
+  })
+  on('store.set', () => {
+    throw new Error('store unavailable')
+  })
+  on('command.register', () => ({ value: { command: 'sharks' } }))
+  on('theme.set', (_, e) => {
+    record.sets.push(e)
+    return { value: { isDrawn: true, requestId: 'backdrop' } }
+  })
+  on('theme.clear', () => ({ value: { isDrawn: false, reason: 'cleared' } }))
+  on('session.id', () => ({ value: 'session-1' }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const named = await $.command.run({ command: 'ascii-sharks-theme:sharks', args: 'smooth' })
+  expect(named.text ?? '').toContain('Motion: smooth')
+  expect(named.text ?? '').toContain('could not be saved')
+  // This session's own copy keeps the choice.
+  const status = await $.command.run({ command: 'sharks', args: '' })
+  expect(status.text ?? '').toContain('motion smooth')
+})

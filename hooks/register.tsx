@@ -43,10 +43,42 @@ const { theme: COLORS, problems } = makeColors({
 
 type Prefs = { isOn: boolean; motion: Motion }
 
+/** This session's own copy of the preferences, used when the store cannot be read or written. */
+const local = new Map<string, unknown>()
+
+/** Reads a saved preference; if the store is unavailable, this session's copy stands instead of failing. */
+async function stored($: EngineInterface, key: string): Promise<unknown> {
+  try {
+    return await $.store.get(key)
+  } catch {
+    return local.get(key)
+  }
+}
+
+/** Saves a preference; returns false when the store refused, so the reply can say it was not remembered. */
+async function save($: EngineInterface, key: string, value: unknown): Promise<boolean> {
+  local.set(key, value)
+  try {
+    await $.store.set(key, value)
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function prefsOf($: EngineInterface): Promise<Prefs> {
-  const isOn = await $.store.get('enabled')
-  const motion = await $.store.get('motion')
+  const isOn = await stored($, 'enabled')
+  const motion = await stored($, 'motion')
   return { isOn: isOn !== false, motion: motion === 'smooth' ? 'smooth' : 'saver' }
+}
+
+/** True for this plugin's command, with or without the plugin's name in front of it. */
+const isSharks = (command: string): boolean => command === 'sharks' || command.endsWith(':sharks')
+
+const NOT_SAVED = ' (This choice could not be saved, so it lasts for this session only.)'
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function lookOf(motion: Motion): ThemeSetArgs {
@@ -102,42 +134,64 @@ export const register: Register = on => {
     // While the colors are being tuned: the line that would make the app ignore the whole theme.
     const unpainted = problems.find(line => line.startsWith("Desktop won't paint"))
     if (unpainted !== undefined) $.ui.toast(unpainted)
-    await show($)
+    try {
+      await show($)
+    } catch (error) {
+      $.ui.toast(`ASCII sharks could not apply the theme: ${messageOf(error)}`)
+    }
     return next(e)
   })
 
   // After a /clear the conversation goes on with a new id and no session.start arrives: reapply on the first turn.
   on('turn.start', async ($, e, next) => {
-    if (e.agentId === undefined && shownFor !== (await $.session.id())) await show($)
+    try {
+      if (e.agentId === undefined && shownFor !== (await $.session.id())) await show($)
+    } catch {
+      // The theme stays as it was; /sharks says what failed if asked.
+    }
     return next(e)
   })
 
-  on('command.run', { command: 'sharks' }, async ($, e) => {
-    const word = e.args.trim().toLowerCase()
-    const prefs = await prefsOf($)
+  // Always answers, even when something below fails, so /sharks never goes unanswered. It listens to every
+  // command and picks /sharks out itself, so it also answers where an app names it after the plugin
+  // ("ascii-sharks-theme:sharks").
+  on('command.run', async ($, e, next) => {
+    if (!isSharks(e.command)) return next(e)
+    const word = String(e.args ?? '').trim().toLowerCase()
+    try {
+      const prefs = await prefsOf($)
 
-    if (word === 'on') {
-      await $.store.set('enabled', true)
-      const set = await show($)
-      return { text: `Sharks on (motion: ${prefs.motion}).${drawnNote(set)}` }
+      if (word === 'on') {
+        const kept = await save($, 'enabled', true)
+        const set = await show($)
+        return { text: `Sharks on (motion: ${prefs.motion}).${kept ? '' : NOT_SAVED}${drawnNote(set)}` }
+      }
+      if (word === 'off') {
+        const kept = await save($, 'enabled', false)
+        // Removing the theme is what was asked for: only here is it cleared.
+        await $.theme.clear()
+        shownFor = undefined
+        const where = kept ? 'in every session' : 'for this session'
+        return { text: `Sharks off ${where}. Bring them back with /sharks on.` }
+      }
+      if (word === 'saver' || word === 'smooth') {
+        const kept = await save($, 'motion', word)
+        const note = kept ? '' : NOT_SAVED
+        if (!prefs.isOn) return { text: `Motion: ${word}.${note} The backdrop is off; turn it on with /sharks on.` }
+        const set = await show($)
+        return { text: `Motion: ${word}.${note}${drawnNote(set)}` }
+      }
+      const state = prefs.isOn ? `on, motion ${prefs.motion}` : 'off'
+      const intro = word === '' ? `Shark backdrop: ${state}.` : `Unknown option "${word}". Shark backdrop: ${state}.`
+      return { text: `${intro}\n${HELP}` }
+    } catch (error) {
+      return {
+        text:
+          `/sharks ${word} could not finish: ${messageOf(error)}\n` +
+          'Please open an issue at https://github.com/Ryukamy/ascii-sharks-theme/issues with this message and your Claude Code version.',
+      }
     }
-    if (word === 'off') {
-      await $.store.set('enabled', false)
-      // Removing the theme is what was asked for: only here is it cleared.
-      await $.theme.clear()
-      shownFor = undefined
-      return { text: 'Sharks off in every session. Bring them back with /sharks on.' }
-    }
-    if (word === 'saver' || word === 'smooth') {
-      await $.store.set('motion', word)
-      if (!prefs.isOn) return { text: `Motion: ${word}. The backdrop is off; turn it on with /sharks on.` }
-      const set = await show($)
-      return { text: `Motion: ${word}.${drawnNote(set)}` }
-    }
-    const state = prefs.isOn ? `on, motion ${prefs.motion}` : 'off'
-    const intro = word === '' ? `Shark backdrop: ${state}.` : `Unknown option "${word}". Shark backdrop: ${state}.`
-    return { text: `${intro}\n${HELP}` }
-  })
+  }).catch(($, e, next) => (next.called || !isSharks(e.command) ? next(e) : { text: 'ASCII sharks: /sharks failed before it could answer.' }))
 
   on('ui.render', { component: 'Backdrop' }, ($, e, next) => {
     // Only the desktop and mobile apps have room behind the chat.
